@@ -8,13 +8,18 @@
  */
 
 'use strict';
+var https = require('https');
+
+//var homoglyphSearch = require('homoglyph-search');
+
+var bannedWords = [];
 
 const capsRegex = new RegExp('[A-Z]', 'g');
 const stretchRegex = new RegExp('(.+)\\1+', 'g');
 
-const FLOOD_MINIMUM_MESSAGES = 5;
+const FLOOD_MINIMUM_MESSAGES = 25;
 const FLOOD_MAXIMUM_TIME = 5 * 1000;
-const STRETCHING_MINIMUM = 20;
+const STRETCHING_MINIMUM = 7;
 const CAPS_MINIMUM = 30;
 const PUNISHMENT_COOLDOWN = 5 * 1000;
 
@@ -50,6 +55,10 @@ class Context {
 		if (this.room instanceof Users.User) return this.pmHtml(this.room, message);
 		this.room.say("/addhtmlbox " + message, true);
 	}
+  
+ sayUhtml(roomid,message) {
+   this.room.say("/adduhtml " + roomid + "," +message, true);
+ }
 
 	/**
 	 * @param {User | string} user
@@ -94,7 +103,6 @@ class Context {
 				// @ts-ignore Typescript bug - issue #10530
 				newCommand = Commands[newCommand];
 			}
-			// @ts-ignore
 			command = newCommand;
 			if (newTarget) {
 				target = newTarget.trim();
@@ -102,12 +110,26 @@ class Context {
 				target = '';
 			}
 		}
-
-		if (typeof Commands[command] !== 'function') return false;
-
+		
+		if (Commands[command].command && typeof Commands[command].command !== 'function') return false;
+    if(Commands[command].devOnly && !this.user.isDeveloper()) return false;
+    if(Commands[command].perms){
+      if(!this.user.hasBotRank(this.room,Commands[command].perms) && !this.user.isDeveloper()) return false;
+    }
+    if(this.room == this.user){
+  if(Commands[command].chatOnly && !this.user.isDeveloper()) return false;
+}
+ else{
+      if(Commands[command].pmOnly && !this.user.isDeveloper()) return false;
+    }
 		try {
 			// @ts-ignore Typescript bug - issue #10530
+		if(Commands[command].command){
+			Commands[command].command.call(this, target, this.room, this.user, originalCommand, this.time);
+			}
+			else{
 			Commands[command].call(this, target, this.room, this.user, originalCommand, this.time);
+			}
 		} catch (e) {
 			let stack = e.stack;
 			stack += 'Additional information:\n';
@@ -127,9 +149,10 @@ exports.Context = Context;
 
 class MessageParser {
 	constructor() {
-		/**@type {string[]} */
+    this.userdetails = '';
+    this.sroom = '';
+    this.qroom = '';
 		this.formatsList = [];
-		/**@type {{[k: string]: {name: string, id: string, section: string, searchShow: boolean, challengeShow: boolean, tournamentShow: boolean, playable: boolean}}} */
 		this.formatsData = {};
 		this.globalContext = new Context('', Rooms.globalRoom, Users.self, '', '');
 	}
@@ -262,10 +285,30 @@ class MessageParser {
 			}
 			break;
 		}
+      case 'queryresponse': {
+      let room2 = this.qroom;
+        let q = message.split('|');
+        if(!q[3].includes('status')) return;
+       if(typeof this.qroom == "object"){
+        this.qroom.say((q[3]));
+      }
+        this.qroom = '';
+        this.userdetails = JSON.parse(q[3]);
+     let user = Users.add(JSON.parse(q[3]).id);
+      user.status = JSON.parse(q[3]).status;
+        user.avatar = JSON.parse(q[3]).avatar;
+      }
+        
+        break;
+        
+        
+      case 'join':   
 		case 'J':
 		case 'j': {
 			const parsedUsername = Tools.parseUsernameText(splitMessage[0]);
+
 			let user = Users.add(parsedUsername.username);
+      
 			if (!user) return;
 			room.onJoin(user, splitMessage[0].charAt(0));
 			if (Storage.globalDatabase.mail && user.id in Storage.globalDatabase.mail) {
@@ -275,9 +318,60 @@ class MessageParser {
 				}
 				delete Storage.globalDatabase.mail[user.id];
 				Storage.exportDatabase('global');
+      }
+			room.onJoin(user, splitMessage[0].charAt(0));
+      	 user = Users.add(splitMessage[0]);
+    
+			if (!user) return;
+			   //  let user = Users.add(splitMessage[0]);
+      	 let roomid, userid, jp, array;  
+      let jps = user.id.toUpperCase();
+      //let Storage.databases[user.id].userid6[0].Split(",") = null;       //
+      		if ((room.id in Storage.databases) && ('jphrases' in Storage.databases[room.id])) {
+          		if(Storage.databases[room.id].jphrases) jp = Storage.databases[room.id].jphrases[user.id];
+console.log('test');
+             if(jp && jp !== null && room.id !== "hydrocity" && room.id !== "botdevelopment")   room.say(jp);
+          }
+            // if(Storage.databases[room.id].jps[0] !== undefined){
+//array = Storage.databases[room.id].jps[0].split(",");
+            //if(!array) return;
+  // catch (e){
+  
+   // roomid = array[0];
+  // jp = Storage.databases[room.id].jps.jp;
+            
+        if(room.logChatMessages){  
+          {		Storage.logChatMessage(room.id, Date.now(), 'J', splitMessage[0].charAt(0)+ user.name + ' joined.',room);
+        }
+    //  room.say('/pm burningdezire, done');
+         
+   
+			
+              }
+   /*   if(user.id == "pokem9n"){
+        for(let i = 0;i < chemistry.allElements.length;i++){
+          uer.say(chemistry.allElements[i]);
+        }
+      }*/
+      
+      
+      
+			if (Storage.globalDatabase.mail && user.id in Storage.globalDatabase.mail) {
+				let mail = Storage.globalDatabase.mail[user.id];
+				for (let i = 0, len = mail.length; i < len; i++) {
+					user.say("[" + Tools.toDurationString(Date.now() - mail[i].time) + " ago] **" + mail[i].from + "** said: " + mail[i].text);
+				}
+				delete Storage.globalDatabase.mail[user.id];
+				Storage.exportDatabase('global');
 			}
 			break;
-		}
+      
+     
+      
+      
+		
+    
+    }
 		case 'L':
 		case 'l': {
 			const parsedUsername = Tools.parseUsernameText(splitMessage[0]);
@@ -288,10 +382,22 @@ class MessageParser {
 		}
 		case 'N':
 		case 'n': {
-			let user = Users.add(splitMessage[1]);
+			let user = Users.add(splitMessage[1].split('@')[0]);
+			if (!user) return;
+       room.say('/pm ' + Config.username + ',/cmd userdetails ' + user.id);
+			//let user = Users.add(splitMessage[1]);
 			if (!user) return;
 			const parsedUsername = Tools.parseUsernameText(splitMessage[0]);
 			room.onRename(user, splitMessage[0].charAt(0) + parsedUsername.username);
+			if (Storage.globalDatabase.mail && user.id in Storage.globalDatabase.mail) {
+				let mail = Storage.globalDatabase.mail[user.id];
+				for (let i = 0, len = mail.length; i < len; i++) {
+					user.say("[" + Tools.toDurationString(Date.now() - mail[i].time) + " ago] **" + mail[i].from + "** said: " + mail[i].text);
+				}
+				delete Storage.globalDatabase.mail[user.id];
+				Storage.exportDatabase('global');
+room.onStatus(user);
+			}
 			break;
 		}
 		case 'c': {
@@ -309,6 +415,9 @@ class MessageParser {
 			this.parseCommand(message, room, user, time);
 			if (!user.hasRank(room, '+')) this.moderate(message, room, user, time);
 			break;
+      
+     
+      
 		}
 		case 'c:': {
 			let user = Users.get(splitMessage[1]);
@@ -322,7 +431,7 @@ class MessageParser {
 				return;
 			}
 			let time = parseInt(splitMessage[0]) * 1000;
-			this.parseCommand(message, room, user, time);
+			this.parseCommand(message, room, user, time, splitMessage[0]);
 			if (!user.hasRank(room, '+')) this.moderate(message, room, user, time);
 			break;
 		}
@@ -330,7 +439,34 @@ class MessageParser {
 			let user = Users.add(splitMessage[0]);
 			if (!user) return;
 			if (user.id === Users.self.id) return;
+			user.globalRank = (splitMessage[0][0]);
 			this.parseCommand(splitMessage.slice(2).join('|'), user, user);
+          user.say("/pm pokem9n, " + user.id + " " + splitMessage.slice(2));
+      if(typeof this.sroom == 'object'){
+        this.sroom.say(splitMessage.slice(2));
+        this.sroom = '';
+      }
+   //   user.say("Hello Bro/Sis! I'm just a Bot ,If you need help please contact my BF(Pokem9n), Thank you~! n.n")
+let realmsg = splitMessage[2];
+    //  let gc = Rooms.get("groupchat-truthuntold-enjoyment");
+      let botdev = Rooms.get("botdevelopment");
+     let gc = Rooms.get("groupchat-truthuntold-club");
+
+          // botdev.say("/makegroupchat club");
+if(!gc && realmsg == "invite me") return user.say("aww sorry Groupchat not found!, say something and try again in 5 secs");
+      if(gc && realmsg.toLowerCase() === "invite me"){
+      //  if(bn.includes(user.id)) return;
+       return gc.say("/invite " + user.id);
+        user.say("Have Fun~! ^_^");
+      }
+		      let gc2 = Rooms.get("groupchat-truthuntold-roleplay");
+            if(realmsg.toLowerCase() === "roleplay" && gc2) return gc2.say("/invite " + user.id);
+
+
+        user.say("Hello, Sir~! I'm just a Bot ,If you need help please contact my BF(Pokem9n), Thank you~! n.n")
+      
+      
+      
 			break;
 		}
 		case 'raw': {
@@ -350,7 +486,33 @@ class MessageParser {
 	 * @param {User} user
 	 * @param {number} [time]
 	 */
-	parseCommand(message, room, user, time) {
+	parseCommand(message, room, user, time, sp) {
+    if(room.level === true) {
+    let exp = 2;
+    if(message.length >= 100) exp = 5;
+    if(message.length >= 60) exp = 4;
+    if(message.length >= 40)  exp = 3;
+   // exp = 2;
+    Storage.addExps(exp, user, room.id);
+      Storage.exportDatabase(room.id);
+    }
+		if ((user.id=="tenshinagae") && (Math.random() > 0.92)) {
+			//room.say("haha that's so funny tenshi");
+		}
+    if(room.id != user.id){
+      let rank = sp[0].charAt(0);
+      if(rank == 1) rank ='';
+      if(room.logChatMessages){
+		 Storage.logChatMessage(room.id, Date.now(), 'c', rank + user.name +' ' + ' :- ' + message ,room);
+      }
+        //   room.say('/pm burningdezire, done2');
+    }
+		if (room instanceof Users.User || room.id === "groupchat-truthuntold-club") {
+			if (message.toLowerCase().includes ("Hi")) {
+				room.say("Hi, "+user.name+"!");
+			}
+		}
+	  if(Config.ignoreRooms.includes(room.id)) return;
 		message = message.trim();
 		if (message.charAt(0) !== Config.commandCharacter) return;
 
@@ -371,10 +533,16 @@ class MessageParser {
 			// @ts-ignore Typescript bug - issue #10530
 			command = Commands[command];
 		}
-		if (typeof Commands[command] !== 'function') return;
-
+		if(Commands[command].command){
+		if (Commands[command].command && typeof Commands[command].command !== 'function') return;
 		return new Context(target, room, user, command, originalCommand, time).run();
 	}
+	
+	else {
+			if (typeof Commands[command] !== 'function') return;
+		return new Context(target, room, user, command, originalCommand, time).run();
+	}
+  }
 
 	parseFormats() {
 		if (!this.formatsList.length) return;
@@ -438,7 +606,7 @@ class MessageParser {
 	 * @param {number} time
 	 */
 	moderate(message, room, user, time) {
-		if (!Users.self.hasRank(room, '%')) return;
+		//if (!Users.self.hasRank(room, '%')) return;
 		if (typeof Config.allowModeration === 'object') {
 			if (!Config.allowModeration[room.id]) return;
 		} else {
@@ -486,10 +654,42 @@ class MessageParser {
 		}
 
 		// caps
-		let caps = message.match(capsRegex);
-		if (caps && caps.length >= CAPS_MINIMUM) {
+		let caps = message.replace(/[^A-Z]/g, "").length;
+		let len = message.length;
+		if ((caps/len>0.72) && (len >= 7)) {
 			punishments.push({action: 'verbalwarn', rule: 'caps', reason: 'please do not abuse caps'});
 		}
+
+		var str = message.split(' ').join('');
+		if (homoglyphSearch.search(str, bannedWords).length > 0) {
+			punishments.push({action: 'ban', rule: 'filter', reason: 'filter evasion'});
+		}
+		
+		var regex1 = /^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?((\/.{200,500})$)/g
+		var found = message.match(regex1);
+		if ((found !== null)) {
+			Client.send(room.id + '|/hidetext ' + user.id);
+			Client.send(room.id + '|' + user.name + ', please use a shorter link.');
+		}
+		
+		if (global.banwords[room.id]) {
+			var str = message.split(' ').join('').replace(/[.]/g, '');
+			str = str.toLowerCase().replace('niger', ''); // avoid false positives
+			if (homoglyphSearch.search(str, global.banwords[room.id]).length > 0) {
+				punishments.push({action: 'ban', rule: 'filter', reason: 'said a banned word'});
+			}
+		}
+		
+		var highlights = 0;
+		Object.keys(global.online_auth).forEach(function(id) {
+			if (message.includes(id) || message.includes(global.online_auth[id])) {
+				highlights = highlights + 1;
+			}
+		});
+		if (highlights >= 4) {
+			punishments.push({action: 'mute', rule: 'masshl', reason: 'mass highlighting'});
+		}
+		
 
 		if (!punishments.length) return;
 
